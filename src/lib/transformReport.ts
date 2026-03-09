@@ -1,4 +1,4 @@
-import type { RawReport, RawVulnerability } from "@/types/raw";
+import type { RawReport } from "@/types/raw";
 import type { Repository } from "@/types/repository";
 import type { Dependency } from "@/types/dependency";
 import type { CVE } from "@/types/cve";
@@ -7,6 +7,10 @@ import type { CVE } from "@/types/cve";
 const mapSeverity = (severity?: string): CVE["severity"] => {
   if (!severity) return "-";
   if (["Low", "Medium", "High", "Critical"].includes(severity)) return severity as CVE["severity"];
+  // Handle "moderate" etc. by mapping to Medium
+  if (severity.toLowerCase() === "moderate") return "Medium";
+  if (severity.toLowerCase() === "low") return "Low";
+  if (severity.toLowerCase() === "high") return "High";
   return "-";
 };
 
@@ -19,51 +23,34 @@ const getMaxSeverity = (cves: CVE[]): CVE["severity"] => {
   }, "-");
 };
 
-// Updated: take repoName as parameter
 export const transformReport = (raw: RawReport, repoName: string): Repository => {
-  // Step 1: Group vulnerabilities by dependency
-  const depMap: Record<string, Dependency> = {};
-
-  const hasExploit = (cves: CVE[]) =>
-    cves.some(cve => cve.links?.some(link => link.name?.includes("EXPLOIT")));
-
-  raw.vulnerabilities.forEach((vuln: RawVulnerability) => {
-    const depName = vuln.location.dependency.package.name;
-    const depVersion = vuln.location.dependency.version;
-    const key = `${depName}@${depVersion}`;
-
-    const cve: CVE = {
-      id: vuln.id,
-      identifiers: vuln.identifiers,
+  const dependencies: Dependency[] = raw.dependencies.map(dep => {
+    // Map each raw vulnerability inside this dependency to CVE
+    const cves: CVE[] = (dep.vulnerabilities ?? []).map(vuln => ({
+      id: vuln.name, // use name as ID
       description: vuln.description,
-      severity: mapSeverity(vuln.severity),
-      score: vuln.score ?? "-",
-      affectedVersions: [depVersion], // optional
-      fixedIn: vuln.fixedIn ?? [],
-      cwe: vuln.cwe ?? [],
-      links: vuln.links ?? [],
-    };
+      severity: mapSeverity(vuln.severity ?? vuln.cvssv3?.baseSeverity),
+      score: vuln.cvssv3?.baseScore ?? "-",
+      cwe: vuln.cwes ?? [],
+      fixedIn: [], // new data may have no fixed versions field
+      affectedVersions: [dep.fileName], // approximate
+      links: (vuln.references ?? []).map(r => ({ name: r.name, url: r.url })),
+      identifiers: [], // optional, can add later if needed
+    }));
 
-    if (!depMap[key]) {
-      depMap[key] = {
-        name: depName,
-        version: depVersion,
-        cves: [cve],
-        severity: mapSeverity(vuln.severity),
-        fixVersion: (vuln.fixedIn ?? []).sort().reverse()[0] || "-",
-        exploit: hasExploit([cve]),
-      };
-    } else {
-      depMap[key].cves.push(cve);
-      depMap[key].severity = getMaxSeverity(depMap[key].cves);
-      const fixVersions = depMap[key].cves.flatMap(c => c.fixedIn || []);
-      depMap[key].fixVersion = fixVersions.sort().reverse()[0] || "-";
-      depMap[key].exploit = hasExploit(depMap[key].cves);
-    }
+    const depSeverity = getMaxSeverity(cves);
+    const hasExploit = cves.some(c => c.links?.some(l => l.name?.includes("EXPLOIT")));
+
+    return {
+      name: dep.fileName,
+      version: dep.fileName.split(":")[1] ?? "-", // crude parse for UI
+      cves,
+      severity: depSeverity,
+      fixVersion: "-", // not available in this data
+      exploit: hasExploit,
+    };
   });
 
-  // Step 2: Create repository object
-  const dependencies = Object.values(depMap);
   const repoSeverity = getMaxSeverity(dependencies.flatMap(d => d.cves));
 
   return {

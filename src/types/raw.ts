@@ -1,35 +1,45 @@
 export interface RawVulnerability {
-    id: string;
-    identifiers?: Array<{
-      type: string;
-      name: string;
-      value: string;
-      url?: string;
-    }>;
-    location: {
-      file: string;
-      dependency: {
-        package: {
-          name: string;
-        };
-        version: string;
-      };
-    };
-    name?: string;
-    description?: string;
-    severity?: "Low" | "Medium" | "High" | "Critical";
-    score?: number;
-    fixedIn?: string[];
-    cwe?: string[];
-    links?: Array<{
-      name: string;
-      url: string;
-    }>;
+  source: string;           // e.g., "NPM"
+  name: string;             // e.g., "GHSA-v88g-cgmw-v5xw"
+  unscored?: string;        // optional
+  severity?: string;        // "moderate", "high", etc.
+  cvssv3?: {
+    baseScore: number;
+    attackVector?: string;
+    attackComplexity?: string;
+    privilegesRequired?: string;
+    userInteraction?: string;
+    scope?: string;
+    confidentialityImpact?: string;
+    integrityImpact?: string;
+    availabilityImpact?: string;
+    baseSeverity?: string;
+    version?: string;
+  };
+  cwes?: string[];
+  description?: string;
+  notes?: string;
+  references?: Array<{ name: string; url: string; source?: string }>;
+  vulnerableSoftware?: Array<{ software: { id: string } }>;
 }
-  
+
+export interface RawDependency {
+  isVirtual: boolean;
+  fileName: string;
+  filePath: string;
+  projectReferences?: string[];
+  evidenceCollected?: {
+    vendorEvidence?: Array<{ type: string; confidence: string; source: string; name: string; value: string }>;
+    productEvidence?: Array<{ type: string; confidence: string; source: string; name: string; value: string }>;
+    versionEvidence?: Array<{ type: string; confidence: string; source: string; name: string; value: string }>;
+  };
+  packages?: Array<{ id: string; confidence: string }>;
+  vulnerabilities?: RawVulnerability[];
+}
+
 export interface RawReport {
-    version: string;
-    schema: string;
-    scan: any;
-    vulnerabilities: RawVulnerability[];
+  reportSchema: string;
+  scanInfo?: any;
+  projectInfo?: any;
+  dependencies: RawDependency[];
 }
